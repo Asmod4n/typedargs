@@ -1,196 +1,106 @@
-# TypedArgs  
-*A tiny operator‑typed CLI language for structured data.*
+# TypedArgs
 
-TypedArgs is not an option parser.  
-It is a **mini‑language** for expressing structured data on the command line — scalars, arrays, hashes, and arrays of hashes — using a small set of explicit, shell‑safe operators.
-
-It runs anywhere MRuby runs: embedded systems, containers, CI runners, Windows, macOS, Linux, BusyBox, Alpine, and fully sandboxed MRuby VMs. No dependencies. No shell tricks. No heuristics. No guessing.
-
-TypedArgs behaves the same everywhere.
-
----
-
-# Why TypedArgs Exists
-
-Most CLI parsers try to *guess* what the user meant. TypedArgs refuses.  
-Shells are inconsistent. Quoting rules differ. JSON on the command line is painful.  
-Suffix‑typed flags collide with shells. YAML is too heavy.  
-Users deserve a grammar that is:
-
-- **Explicit** — the operator defines the shape  
-- **Portable** — works in every shell without quoting  
-- **Deterministic** — same input, same output, always  
-- **Minimal** — four operators, one mental model  
-- **Structured** — arrays and hashes are first‑class citizens  
-
-TypedArgs is the answer: a tiny algebra of flags.
-
----
-
-# The Operator Model
-
-TypedArgs is built on four operators.  
-They define the shape of the value — nothing else is needed.
-
-| Operator | Meaning |
-|----------|---------|
-| `=` | scalar assignment |
-| `+=` | append scalar to array |
-| `:fields:=` | assign hash tuple |
-| `+:fields:=` | append hash tuple to array |
-
-This is the entire language.
-
-No suffixes.  
-No brackets.  
-No type inference.  
-No shell‑sensitive characters.  
-Just operators.
-
----
-
-# Installation
-
-TypedArgs is pure Ruby and MRuby‑core‑friendly.  
-Drop the Ruby files into your MRuby build or load them into your VM.
-
----
-
-# Basic Usage
-
-```ruby
-args = TypedArgs.opts("--mode=fast", "--debug=true")
-
-args["mode"]   # => "fast"
-args["debug"]  # => true
-```
-
-If no arguments are passed, `TypedArgs.opts` defaults to `ARGV`.  
-You must supply that array yourself in MRuby; see `tools/typedargs_test/test.c` for an example.
-
----
-
-# Grammar Overview
-
-TypedArgs defines a small, explicit grammar for keys and values.  
-Everything is driven by operators.
-
----
-
-## Scalars
+Structured CLI arguments for mruby and CRuby. Lets you pass arrays, hashes, and arrays of records on the command line without quoting JSON or writing a config file.
 
 ```
 --mode=fast
---count=5
---debug=true
---foo=nil
-```
-
-Values may be:
-
-- strings  
-- integers  
-- floats  
-- booleans (`true` / `false`)  
-- `nil`  
-
----
-
-## Dotted Keys
-
-```
---db.user=root
---cache.redis.host=localhost
-```
-
-Keys may contain:
-
-- letters  
-- digits  
-- underscore  
-- dash  
-- dot  
-
-Keys may **not** start with a digit or dash.  
-Dotted keys are treated as **flat strings**, not nested hashes.
-
----
-
-## Arrays (`+=`)
-
-```
---item+=a
---item+=b
-```
-
-Result:
-
-```ruby
-{ "item" => ["a", "b"] }
-```
-
-`+=` always appends.  
-If the key didn’t exist, an array is created.
-
----
-
-## Hash Tuples (`:fields:=`)
-
-```
+--item+=apple --item+=banana
 --range:min,max:=5,10
-```
-
-Result:
-
-```ruby
-{ "range" => { "min" => 5, "max" => 10 } }
-```
-
-Arity is enforced:  
-If you declare two fields, you must supply two values.
-
----
-
-## Arrays of Hashes (`+:fields:=`)
-
-```
 --servers+:name,port:=alpha,80
 --servers+:name,port:=beta,443
 ```
 
-Result:
+becomes
 
 ```ruby
 {
+  "mode"    => "fast",
+  "item"    => ["apple", "banana"],
+  "range"   => {"min" => 5, "max" => 10},
   "servers" => [
-    { "name" => "alpha", "port" => 80 },
-    { "name" => "beta",  "port" => 443 }
+    {"name" => "alpha", "port" => 80},
+    {"name" => "beta",  "port" => 443}
   ]
 }
 ```
 
-`+:` always appends a hash to an array.
+It's a small, dependency-free parser that runs anywhere mruby runs (embedded, BusyBox, Alpine, sandboxed VMs) and on CRuby ≥ 2.5.
 
----
+## When you'd want this
 
-## Short‑Flag Aliases
+You have a CLI that takes input that's genuinely structured — a list of servers, a set of feature toggles, a hash of coordinates — and the alternatives don't fit:
+
+- JSON on argv means escaping `'{"servers":[{"name":"alpha"}]}'` past the shell.
+- Repeating a flag with an ad-hoc convention (`--server alpha:80 --server beta:443`) means inventing a mini-syntax per tool.
+- A config file is heavy when you only have three values to pass.
+
+If your CLI takes scalars and the occasional list, a normal option parser is probably a better fit. TypedArgs earns its place when structure is the point.
+
+## The four operators
+
+| Form | Meaning |
+|---|---|
+| `--key=value` | scalar |
+| `--key+=value` | append to array |
+| `--key:f1,f2:=v1,v2` | hash with named fields |
+| `--key+:f1,f2:=v1,v2` | append a hash to an array |
+
+Scalar values are auto-typed: integers, floats, `true`, `false`, `nil`, and otherwise strings. Tuple arity is enforced — declaring two fields means you must supply two values.
+
+## Usage
+
+```ruby
+require "typedargs"
+
+args = TypedArgs.opts("--mode=fast", "--debug=true")
+args["mode"]   # => "fast"
+args["debug"]  # => true
+```
+
+Calling `TypedArgs.opts` with no arguments reads from `ARGV`. In mruby you provide `ARGV` yourself; see `tools/typedargs_test/test.c`.
+
+## Keys
+
+Keys are letters, digits, underscore, dash, and dot. They can't start with a digit or dash. Dotted keys (`--db.host=localhost`) are stored as **flat strings**, not nested hashes — `args["db.host"]`, not `args["db"]["host"]`. Auto-nesting opens ambiguities the grammar avoids.
+
+## Short-flag aliases
 
 ```ruby
 TypedArgs.alias("-v", "--verbose")
-TypedArgs.opts("-v")
-# => { "verbose" => true }
+TypedArgs.opts("-v")        # => {"verbose" => true}
+TypedArgs.opts("-vfoo")     # => {"verbose" => "foo"}
 ```
 
-Aliases expand before parsing.  
-They can target dotted keys and any operator form.
+The alias target can be any long-flag form, including operators:
 
----
+```ruby
+TypedArgs.alias("-r", "--range:min,max:=")
+TypedArgs.opts("-r5,10")    # => {"range" => {"min" => 5, "max" => 10}}
 
-# Error Reporting
+TypedArgs.alias("-S", "--servers+:name,port:=")
+TypedArgs.opts("-Salpha,80", "-Sbeta,443")
+# => {"servers" => [{"name"=>"alpha","port"=>80}, {"name"=>"beta","port"=>443}]}
+```
 
-TypedArgs provides compiler‑style diagnostics with caret indicators.
+Aliases are textual rewrites performed before parsing. `TypedArgs.reset_aliases!` clears the alias map (useful in tests).
 
-Example:
+## Override rules
+
+Flags apply in argv order. Later flags overwrite earlier ones unless they're accumulating.
+
+| Sequence | Result |
+|---|---|
+| `--foo=1` then `--foo+=2` | `[2]` |
+| `--foo+=1` then `--foo+=2` | `[1, 2]` |
+| `--foo:a,b:=1,2` then `--foo:a,b:=3,4` | `{"a"=>3, "b"=>4}` |
+| `--foo+:a,b:=1,2` then `--foo+:a,b:=3,4` | `[{"a"=>1,"b"=>2}, {"a"=>3,"b"=>4}]` |
+| `--foo=1`, `--foo+=2`, `--foo:n:=x`, `--foo=bar` | `"bar"` |
+
+The operator on each flag determines the shape of the value at that key.
+
+## Errors
+
+Invalid input raises a `TypedArgs::SyntaxError` subclass with a caret pointing at the offending byte:
 
 ```
 --range:min,max:=5
@@ -198,127 +108,26 @@ Example:
 Syntax error: Arity mismatch: expected 2, got 1
 ```
 
-Every error includes:
+The exception classes are `InvalidCharacterError`, `InvalidKeyStartError`, `UnterminatedStringError`, `ArityMismatchError`, `UnexpectedTokenError`, `InvalidSuffixPositionError`, `InvalidFieldListError`, and `InvalidNumberError`.
 
-- the original argument  
-- a caret pointing to the exact byte  
-- a clear error class  
+## Caveats
 
-TypedArgs is self‑teaching.
+The shell still owns word-splitting and metacharacter handling — `--secret=p$ssw0rd` will need quoting in bash regardless of what TypedArgs does after argv arrives. Strictness around scalars (e.g. `12.34.56` raises rather than parsing as a string) is intentional but stricter than most option parsers.
 
----
+## Installation
 
-# Operator Semantics
+For CRuby:
 
-TypedArgs applies flags **in order**.  
-Later flags overwrite earlier ones unless using accumulation operators.
+```
+gem install typedargs
+```
 
----
+For mruby, add to your `build_config.rb`:
 
-## Scalar Assignment (`=`)
+```ruby
+conf.gem mgem: 'typedargs'
+```
 
-| Syntax | Meaning |
-|--------|---------|
-| `--key=value` | assign scalar |
+## License
 
-Overwrites previous value.
-
----
-
-## Scalar Accumulation (`+=`)
-
-| Syntax | Meaning |
-|--------|---------|
-| `--key+=value` | append scalar to array |
-
-Creates array if missing.  
-Overwrites previous non‑array values.
-
----
-
-## Hash Tuple Assignment (`:fields:=`)
-
-| Syntax | Meaning |
-|--------|---------|
-| `--key:field1,field2:=v1,v2` | assign hash |
-
-Overwrites previous value.
-
----
-
-## Array of Hashes (`+:fields:=`)
-
-| Syntax | Meaning |
-|--------|---------|
-| `--key+:field1,field2:=v1,v2` | append hash to array |
-
-Creates array if missing.
-
----
-
-# Sequential Override Rules
-
-| Sequence | Result |
-|----------|--------|
-| `--foo=1` → `--foo+=2` | `[2]` |
-| `--foo+=1` → `--foo+=2` | `[1,2]` |
-| `--foo:min,max:=1,2` → `--foo:min,max:=3,4` | `{ "min"=>3,"max"=>4 }` |
-| `--foo+:min,max:=1,2` → `--foo+:min,max:=3,4` | `[{"min"=>1,"max"=>2},{"min"=>3,"max"=>4}]` |
-| `--foo=1` → `--foo+=2` → `--foo:name:=alpha` → `--foo=bar` | `"bar"` |
-
-TypedArgs is explicit:  
-the operator determines the shape.
-
----
-
-# Conformance Suite
-
-TypedArgs ships with a full conformance suite covering:
-
-- scalars  
-- arrays  
-- hashes  
-- arrays of hashes  
-- dotted keys  
-- alias expansion  
-- invalid characters  
-- invalid suffix placement  
-- invalid field lists  
-- tuple arity  
-- invalid numbers  
-- unterminated strings  
-- invalid short flags  
-- invalid dotted paths  
-- empty keys  
-- alias expansion to invalid keys  
-
-The suite **is the specification**.  
-If an implementation passes the suite, it is TypedArgs.
-
----
-
-# Design Philosophy
-
-TypedArgs is intentionally:
-
-- **Explicit** — no guessing  
-- **Portable** — no shell dependencies  
-- **Minimal** — four operators, one grammar  
-- **Deterministic** — predictable and stable  
-- **Structured** — arrays and hashes are first‑class  
-
-TypedArgs does **not** depend on:
-
-- shell brace expansion  
-- shell quoting rules  
-- environment‑specific behavior  
-- Bash‑only features  
-
-The shell’s only job is to pass raw strings.  
-TypedArgs does everything else.
-
----
-
-# License
-
-Apache‑2
+Apache-2.0.
