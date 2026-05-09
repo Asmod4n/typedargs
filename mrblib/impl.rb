@@ -12,7 +12,21 @@ module TypedArgs
               if long_flag?(a)
                 parse_long(out, a)
               elsif short_flag?(a)
-                parse_short(out, a)
+                # Alias expansion happens BEFORE parsing, per the README.
+                # If a 2-char short prefix is aliased, we textually rewrite
+                # the entire arg into a long-flag form and dispatch there.
+                expanded = Internal.expand_short_alias(a)
+                if expanded
+                  if long_flag?(expanded)
+                    parse_long(out, expanded)
+                  else
+                    # Alias target wasn't a long-flag form; treat the original
+                    # arg as a short flag (best-effort fallback).
+                    parse_short(out, a)
+                  end
+                else
+                  parse_short(out, a)
+                end
               end
             end
             i += 1
@@ -21,6 +35,7 @@ module TypedArgs
         end
 
         private
+
         def long_flag?(arg)
           arg.length >= 2 &&
           arg[0,1] == "-" &&
@@ -33,35 +48,28 @@ module TypedArgs
           !(arg.length >= 2 && arg[1,1] == "-")
         end
 
-
-        # In impl.rb, replace parse_long or parse_long-like logic with:
-
         def parse_long(out, arg)
-          # body as character substring (character-mode)
-          body = arg[2, arg.length - 2]   # "--" removed, character-based
+          body = arg[2, arg.length - 2]   # strip "--"
 
-          # find '=' in character mode
           eq_idx = body.index("=")
-
           if eq_idx
-            key_str = body[0, eq_idx]    # character substring for key
-            val_str = body[(eq_idx + 1), body.length - (eq_idx + 1)] # character substring for value
+            key_str = body[0, eq_idx]
+            val_str = body[(eq_idx + 1), body.length - (eq_idx + 1)]
           else
             key_str = body
             val_str = nil
           end
 
-          # parse key in character mode
           key_lex = Lexer.new(key_str, 0, key_str.length, true)
           key_ast = KeyParser.new(key_lex).parse
 
-          name = Internal.resolve_name(key_ast[:name])
+          # Long-flag keys are taken at face value; the alias map applies
+          # only to short flags (per README).
+          name = key_ast[:name]
 
-          # script check (character indices)
           ScriptCheck.validate_key(key_str)
 
           if val_str
-            # parse value in character mode (value lexer now also character-based)
             val_lex = Lexer.new(val_str, 0, val_str.length, false)
             vp = ValueParser.new(val_lex)
 
@@ -79,55 +87,34 @@ module TypedArgs
           assign(out, name, key_ast, value)
         end
 
-
+        # parse_short handles short flags that DO NOT have an alias.
+        # Aliased short flags are rewritten and dispatched to parse_long.
         def parse_short(out, arg)
-          raw  = arg[0,2]
-          name = Internal.resolve_name(raw)
+          # Strip the leading dash; everything after it is the bare name
+          # candidate (until any attached value).
+          name = arg[1, arg.length - 1]
 
           if name.nil? || name.length == 0
             raise InvalidKeyStartError.new(
-              "Invalid key start",
-              1,
-              arg
+              "Invalid key start", 1, arg
             )
           end
 
-          # first character validation (character-mode)
+          # Validate the first character of the short-flag name.
           c0 = name[0,1]
           unless c0 == "_" ||
                 (c0 >= "A" && c0 <= "Z") ||
                 (c0 >= "a" && c0 <= "z") ||
-                (c0 > "\u007F") # treat non-ASCII single-char as letter candidate
+                (c0 > "\u007F")
             raise InvalidCharacterError.new(
-              "Illegal character in short flag",
-              1,
-              arg
+              "Illegal character in short flag", 1, arg
             )
           end
 
-          # remaining characters validation (character-mode)
-          j = 1
-          while j < name.length
-            ch = name[j,1]
-            valid =
-              ch == "_" ||
-              (ch >= "A" && ch <= "Z") ||
-              (ch >= "a" && ch <= "z") ||
-              (ch >= "0" && ch <= "9") ||
-              ch == "-" ||
-              ch == "." ||
-              (ch > "\u007F") # allow non-ASCII letters
-            unless valid
-              raise InvalidCharacterError.new(
-                "Illegal character in short flag",
-                1,
-                arg
-              )
-            end
-            j += 1
-          end
+          # The bare name is just the first character. Everything else
+          # (if any) is the attached value.
+          name = c0
 
-          # attached value (character-mode)
           if arg.length > 2
             val_str = arg[2, arg.length - 2]
             val_lex = Lexer.new(val_str, 0, val_str.length, false)
@@ -139,7 +126,6 @@ module TypedArgs
 
           out[name] = value
         end
-
 
         def build_hash(fields, vals)
           h = {}
@@ -156,10 +142,8 @@ module TypedArgs
           when :scalar
             out[name] = value
           when :hash
-            existing = out[name]
-            h = existing.is_a?(Hash) ? existing : {}
-            value.each { |k, v| h[k] = v }
-            out[name] = h
+            # Hash tuple assignment overwrites the previous value, per README.
+            out[name] = value
           when :array_scalar
             existing = out[name]
             arr = existing.is_a?(Array) ? existing : []

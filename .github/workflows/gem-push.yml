@@ -2,9 +2,9 @@ name: Ruby Gem
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -16,13 +16,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Set up Ruby 2.6
-    # To automatically get bug fixes and new Ruby versions for ruby/setup-ruby,
-    # change this to (see https://github.com/ruby/setup-ruby#versioning):
-    # uses: ruby/setup-ruby@v1
-      uses: ruby/setup-ruby@v1 # v1.146.0
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@v1
       with:
-        ruby-version: 4.0.1
+        ruby-version: '3.4'
 
     - name: Publish to RubyGems
       run: |

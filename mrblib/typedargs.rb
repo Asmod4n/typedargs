@@ -27,6 +27,11 @@ module TypedArgs
       Internal.register_alias(short, long)
     end
 
+    # Clear all registered aliases. Useful for test isolation.
+    def reset_aliases!
+      Internal.reset_aliases!
+    end
+
     def opts(*argv)
       args = argv.empty? ? ::ARGV : argv
       Internal::Impl.parse(args)

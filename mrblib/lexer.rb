@@ -43,7 +43,7 @@ module TypedArgs
           start = i
           i += 1
 
-          # scan UTF‑8 codepoints until closing quote
+          # scan UTF-8 codepoints until closing quote
           while i < end_i
             cp, ni = Internal.utf8_next(s, i)
 
@@ -88,7 +88,7 @@ module TypedArgs
             @i = j
             return Token.new(:IDENT, val, i)
           else
-            # raw value: scan until whitespace or comma
+            # raw value: scan until comma (the only intra-arg terminator)
             start = i
             while i < end_i
               cc = s[i,1]

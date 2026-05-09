@@ -9,4 +9,3 @@ MRuby::Build.new do |conf|
   conf.enable_bintest
   conf.gem File.expand_path(File.dirname(__FILE__))
 end
-1

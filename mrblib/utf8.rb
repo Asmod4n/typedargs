@@ -1,11 +1,5 @@
 module TypedArgs
   module Internal
-    SCRIPT_ASCII    = 1
-    SCRIPT_LATIN    = 1
-    SCRIPT_GREEK    = 3
-    SCRIPT_CYRILLIC = 4
-    SCRIPT_OTHER    = 5
-
     def self.printable_byte?(b)
       return true  if b >= 0x20 && b <= 0x7E
       return false if b >= 0x80 && b <= 0x9F

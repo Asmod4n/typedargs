@@ -61,7 +61,7 @@ module TypedArgs
         if Object.const_defined?(:Float)
           return s.to_f if float_string?(s)
         end
-        raise InvalidNumberError.new("Invalid number", @tok.pos, s)
+        raise InvalidNumberError.new("Invalid number", @tok.pos, @lx.str)
       end
 
       def integer_string?(s)
