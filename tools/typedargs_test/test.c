@@ -2,17 +2,22 @@
 #include <mruby/array.h>
 #include <mruby/string.h>
 #include <mruby/variable.h>
-#include <mruby/compile.h>
 #include <mruby/presym.h>
 #include <mruby/error.h>
+#include <mruby/class.h>
 #include <string.h>
 
-int main(const int argc, const char *argv[]) {
+int main(const int argc, const char * const argv[]) {
   mrb_state *mrb = NULL;
   int exit_code = 0;
 
   mrb = mrb_open();
   if (!mrb) {
+    return 1;
+  }
+  if (mrb->exc) {
+    mrb_print_error(mrb);
+    mrb_close(mrb);
     return 1;
   }
 
@@ -24,7 +29,9 @@ int main(const int argc, const char *argv[]) {
   mrb_obj_freeze(mrb, ARGV);
   mrb_define_const_id(mrb, mrb->object_class, MRB_SYM(ARGV), ARGV);
 
-  mrb_value res = mrb_load_string(mrb, "TypedArgs.opts");
+  struct RClass *typeadargs = mrb_module_get_id(mrb, MRB_SYM(TypedArgs));
+
+  mrb_value res = mrb_funcall(mrb, mrb_obj_value(typeadargs), "opts", 0);
 
   if (mrb->exc) {
     mrb_print_error(mrb);
